@@ -2,7 +2,7 @@
 
 バイト収入、日常の支出、ゲーム支出、サブスクリプションを管理する、1人用の家計簿Webアプリです。
 
-現在はv0.1の仕様が確定し、サブスクリプション管理・自動計上と支出集計まで実装済みです。手動収支に加え、月額・年額サブスクの登録、停止、再開、過去分補完、期間・集計軸を切り替えたドーナツグラフを利用できます。
+v0.1の家計簿機能に加え、v0.2ではFirebase AuthenticationのGoogleログインと、Firestoreへの手動クラウド保存・読込基盤を実装しています。通常の保存先は引き続きLocalStorageで、自動同期はまだ行いません。
 
 ## v0.1で目指すもの
 
@@ -21,6 +21,7 @@
 - CSS
 - JavaScript
 - Chart.js 4.5.1（固定バージョンCDN）
+- Firebase JavaScript SDK 12.16.0（モジュラーAPI・固定バージョンCDN）
 - GitHub Pages
 - LocalStorage
 
@@ -40,6 +41,28 @@ v0.1ではデータを利用中のブラウザのLocalStorageに保存します�
 ブラウザデータの削除や端末故障で失われる可能性があるため、JSONバックアップを定期的に取得する運用を前提とします。
 
 JSON復元は現在データを全置換します。復元直前には現在データを別のLocalStorageキーへ安全退避し、退避用JSONのダウンロードも開始します。CSVは閲覧用であり、復元には使用できません。
+
+Googleログイン後も、収支登録などの通常操作はLocalStorageだけへ保存されます。「その他」のGoogleアカウント欄から明示的に操作した場合だけ、AppData全体をFirestoreへ保存、またはFirestoreから端末へ読み込みます。Firebase Authenticationの認証情報やトークンはAppDataとJSONバックアップへ含めません。
+
+## Firebase設定
+
+1. Firebase ConsoleでプロジェクトにWebアプリを登録する。
+2. Authenticationのログイン方法でGoogleプロバイダを有効にする。
+3. `js/firebase.js` の `firebaseConfig` に、Firebase Consoleに表示された `apiKey`、`authDomain`、`projectId`、`appId` を入力する。
+4. GitHub Pagesなどで公開する場合は、そのホスト名をAuthenticationの承認済みドメインへ登録する。
+5. HTTPサーバー経由でアプリを開き、「その他」のGoogleアカウント欄から接続を確認する。
+6. Firebase ConsoleのFirestore Database → ルールへ `firestore.rules` の内容を貼り付けて公開する。
+
+設定値が空の場合は認証欄に「未設定」と表示し、ログインボタンだけを無効化します。既存の家計簿機能には影響しません。
+
+### 手動クラウド操作
+
+- 保存先：`users/{uid}/apps/kakeibo`
+- 「状態を更新」：クラウドデータの有無と概要を再取得
+- 「端末データを保存」：比較確認後、現在のLocalStorageデータでクラウドを上書き
+- 「端末へ読み込む」：現在データを安全退避・JSON出力してからクラウドAppDataで全置換
+
+クラウド側の方が新しい可能性がある状態で保存する場合は、`OVERWRITE`入力による追加確認が必要です。Webの永続オフラインキャッシュ、起動時の自動読込、LocalStorage保存後の自動同期は使用していません。
 
 ## 文書
 
@@ -68,4 +91,8 @@ JSON復元は現在データを全置換します。復元直前には現在デ�
 - 収支の内容は任意入力で、空欄時は履歴に小カテゴリ名または大カテゴリ名を表示
 - ホームに今月の大カテゴリ別支出ドーナツグラフと上位5件一覧を表示
 - ホームに利用中サブスクの次回更新予定を日付順で最大3件表示
+- Firebase AuthenticationのGoogleログイン・ログアウト・状態表示を実装済み
+- Firebase設定未入力または接続失敗時もLocalStorage機能を継続可能
+- Firestoreへの手動保存、状態取得、安全退避付き端末読込を実装済み
+- 自動クラウド同期は未実装
 - GitHub Pagesでは未公開

@@ -8,6 +8,13 @@
 
 ### Added
 
+- v0.2 Step1としてFirebase JavaScript SDK 12.16.0のCDN接続基盤を追加。
+- Firebase AuthenticationによるGoogleログイン、ログアウト、ログインユーザー名、認証状態別UIを追加。
+- Firebase未設定・CDN読込失敗・接続失敗時も既存LocalStorage機能を継続するフォールバックを追加。
+- v0.2 Step2として、ユーザーUID別のFirestore手動保存・取得・端末読込基盤を追加。
+- 端末とクラウドの概要比較、クラウド側が新しい場合の`OVERWRITE`追加確認を追加。
+- クラウド読込前のLocalStorage安全退避とJSONダウンロードを追加。
+- 未ログイン・他UIDからのアクセスを拒否するFirestore Security Rules案を追加。
 - v0.1の確定仕様、ロードマップ、README、アイデア管理文書を作成。
 - 初期残高、収入カテゴリ、サブスクリプション再開、限定編集、支払い方法、小カテゴリ自動選択の仕様を確定。
 - モバイルファーストの画面骨格・UIベースを追加。

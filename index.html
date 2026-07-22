@@ -277,6 +277,42 @@
             </div>
           </div>
 
+          <section class="panel auth-card" aria-labelledby="firebase-auth-title">
+            <div class="auth-card-heading">
+              <div>
+                <p class="panel-kicker">FIREBASE</p>
+                <h3 id="firebase-auth-title">Googleアカウント</h3>
+              </div>
+              <span class="connection-status" id="firebase-connection-status" data-state="loading">接続確認中</span>
+            </div>
+            <p class="auth-user-name" id="firebase-user-name">ログイン状態を確認しています</p>
+            <p class="auth-user-email" id="firebase-user-email" hidden></p>
+            <p class="auth-description" id="firebase-auth-description">ログインしても、家計簿データはこの端末のLocalStorageに保存されます。</p>
+            <div class="auth-actions">
+              <button class="button button-primary" id="firebase-login-button" type="button" disabled>Googleでログイン</button>
+              <button class="button button-secondary" id="firebase-logout-button" type="button" hidden>ログアウト</button>
+            </div>
+            <section class="cloud-panel" id="cloud-panel" aria-labelledby="cloud-panel-title" hidden>
+              <div class="cloud-panel-heading">
+                <h4 id="cloud-panel-title">クラウドデータ</h4>
+                <span class="connection-status" id="cloud-connection-status" data-state="loading">確認待ち</span>
+              </div>
+              <dl class="cloud-status-list">
+                <div><dt>最終取得</dt><dd id="cloud-fetched-at">未実施</dd></div>
+                <div><dt>クラウド更新</dt><dd id="cloud-updated-at">—</dd></div>
+                <div><dt>revision</dt><dd id="cloud-revision">—</dd></div>
+                <div><dt>取引 / サブスク</dt><dd id="cloud-record-counts">—</dd></div>
+                <div><dt>初期残高</dt><dd id="cloud-baseline-status">—</dd></div>
+              </dl>
+              <div class="cloud-actions">
+                <button class="button button-secondary" id="cloud-refresh-button" type="button">状態を更新</button>
+                <button class="button button-primary" id="cloud-upload-button" type="button">端末データを保存</button>
+                <button class="button button-secondary" id="cloud-download-button" type="button" disabled>端末へ読み込む</button>
+              </div>
+            </section>
+            <p class="form-error auth-error" id="firebase-auth-error" role="alert" hidden></p>
+          </section>
+
           <div class="menu-list">
             <button class="menu-item" type="button" data-view-target="subscriptions">
               <span class="menu-icon" aria-hidden="true">↻</span>
@@ -296,8 +332,8 @@
           </div>
 
           <div class="notice-card">
-            <strong>この端末だけに保存されます</strong>
-            <p>PCや別のブラウザとは同期されません。定期的にJSONバックアップを保存してください。</p>
+            <strong>通常の保存先はこの端末です</strong>
+            <p>クラウドへの保存・読込はGoogleログイン後の手動操作です。JSONバックアップも定期的に保存してください。</p>
           </div>
         </section>
 
@@ -600,6 +636,42 @@
         <div class="dialog-actions">
           <button class="button button-secondary" type="button" data-dialog-close="restore-preview-dialog">キャンセル</button>
           <button class="button button-primary" id="restore-confirm-button" type="button">安全退避して復元</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog cloud-dialog" id="cloud-upload-dialog" aria-labelledby="cloud-upload-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div><p class="panel-kicker">CLOUD SAVE</p><h2 id="cloud-upload-title">クラウド保存を確認</h2></div>
+        </div>
+        <p class="dialog-description" id="cloud-upload-description">端末データをクラウドへ保存します。先にJSONバックアップを取得することをおすすめします。</p>
+        <div class="cloud-comparison" id="cloud-upload-comparison"></div>
+        <div class="cloud-strong-warning" id="cloud-upload-warning" hidden>
+          <strong>クラウド側のデータの方が新しい可能性があります</strong>
+          <p>それでも古い端末データで上書きする場合は、半角大文字で <strong>OVERWRITE</strong> と入力してください。</p>
+          <label class="field"><span>確認文字列</span><input id="cloud-overwrite-confirmation" type="text" autocomplete="off" spellcheck="false" placeholder="OVERWRITE"></label>
+        </div>
+        <p class="form-error" id="cloud-upload-error" role="alert" hidden></p>
+        <div class="dialog-actions cloud-dialog-actions">
+          <button class="button button-secondary" id="cloud-upload-backup-button" type="button">先にJSONバックアップ</button>
+          <button class="button button-secondary" type="button" data-dialog-close="cloud-upload-dialog">キャンセル</button>
+          <button class="button button-primary" id="cloud-upload-confirm-button" type="button">クラウドへ保存</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog cloud-dialog" id="cloud-download-dialog" aria-labelledby="cloud-download-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div><p class="panel-kicker">CLOUD LOAD</p><h2 id="cloud-download-title">端末データの置換を確認</h2></div>
+        </div>
+        <p class="dialog-description">現在の端末データを安全退避し、JSONダウンロードを開始してから、クラウドデータで全置換します。</p>
+        <div class="cloud-comparison" id="cloud-download-comparison"></div>
+        <p class="form-error" id="cloud-download-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="cloud-download-dialog">キャンセル</button>
+          <button class="button button-primary" id="cloud-download-confirm-button" type="button">安全退避して読み込む</button>
         </div>
       </div>
     </dialog>

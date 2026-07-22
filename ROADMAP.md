@@ -4,8 +4,8 @@
 
 ## 現在の状態
 
-- フェーズ：v0.1 実装ステップ7完了後のUI改善
-- 本実装：カテゴリ・支払い方法追加、任意の取引内容、ホーム支出内訳まで完了
+- フェーズ：v0.2 Step1「Firebase接続基盤」
+- v0.1のLocalStorage機能を維持したまま、GoogleログインとFirebase接続確認を追加
 
 ## v0.1：最小限の家計簿を完成させる
 
@@ -107,7 +107,35 @@
 - [ ] PCブラウザ確認
 - [ ] GitHub Pages公開
 
-## v0.2候補
+## v0.2
+
+### Step1：Firebase接続基盤
+
+- [x] CDN版Firebase SDKの固定バージョン読込
+- [x] Firebase初期化モジュール
+- [x] Googleログイン・ログアウト
+- [x] ログインユーザー名と認証状態の表示
+- [x] 認証状態のローカル永続化
+- [x] 未設定・接続失敗時も既存機能を継続するフォールバック
+- [x] LocalStorageのAppDataとschemaVersionを変更しない
+- [ ] Firebase Consoleの実プロジェクト設定値を反映して接続確認
+- [x] Firestoreのデータ設計とSecurity Rules案を確定
+
+### Step2：Firestoreクラウド同期の土台
+
+- [x] `users/{uid}/apps/kakeibo` のユーザー別保存構造
+- [x] クラウド状態の手動再取得と概要表示
+- [x] 初回クラウド保存と既存クラウド上書き
+- [x] 新旧比較と古い端末データ上書き時の追加確認
+- [x] 復元安全退避・JSONダウンロード付きクラウド読込
+- [x] AppData検証とFirestore非対応値の拒否
+- [x] LocalStorage・JSON・schemaVersion 1との共存
+- [x] 永続オフラインキャッシュを有効化しない
+- [ ] 実Firebase設定による認証・Firestore疎通試験
+- [ ] Firebase ConsoleへのSecurity Rules反映
+- [ ] LocalStorage保存後の自動クラウド同期
+
+### その他のv0.2候補
 
 - カテゴリの編集、削除、並び替え
 - 支払い方法の編集、削除、並び替え
@@ -118,7 +146,6 @@
 ## 将来候補
 
 - 複数端末同期
-- ログイン
 - PWA・オフライン対応
 - 予算管理
 - 口座別残高管理

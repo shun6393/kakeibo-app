@@ -26,7 +26,7 @@
 
 - HTML、CSS、JavaScriptで実装する。
 - GitHub Pagesで公開できる静的構成とする。
-- ログインおよびサーバーは使用しない。
+- v0.1ではログインおよびサーバーを使用しない。v0.2 Step1からFirebase AuthenticationによるGoogleログインを追加する。
 - データはブラウザのLocalStorageに保存する。
 - LocalStorageの固定キー名は `kakeibo-app-data` とし、互換性維持のため将来も変更しない。
 - 復元直前の安全退避には固定キー名 `kakeibo-app-data-restore-safety` を使用する。このキーは次回の復元時に上書きし、全データ削除時には通常データとともに削除する。
@@ -37,6 +37,7 @@
 - 金額の通貨は日本円のみとし、小数・0円・負数を許可しない。
 - モバイルファーストで設計し、初期版では装飾より見やすさと操作の単純さを優先する。
 - メインカラーは緑系とする。
+- Firebase SDKはモジュラーAPIのCDN版を固定バージョンで読み込む。
 
 ## 4. v0.1の機能範囲
 
@@ -500,13 +501,73 @@ JavaScriptによるシンプルなシングルページ構成を基本とする�
 - CSVからの復元
 - 円グラフ以外のグラフ
 
-## 8. 実装時に提案・相談する事項
+## 8. v0.2 Step1：Firebase接続基盤
+
+v0.2 Step1ではGoogleログインとFirebase Authenticationへの接続確認だけを実装する。
+
+- Firebase SDKは `12.16.0` のCDN版を使用する。
+- FirebaseのWebアプリ設定は `js/firebase.js` の `firebaseConfig` に記載する。
+- Googleログイン、ログアウト、ログイン中の表示名、ログイン状態に応じたUI切り替えを提供する。
+- 認証状態はFirebase Authenticationのローカル永続化を使用し、再読み込み後も維持する。
+- Firebaseの設定が未入力、CDNの読み込みに失敗、または認証接続に失敗した場合も、既存の家計簿機能は利用可能とする。
+- 家計簿のAppData、LocalStorage固定キー、`schemaVersion`、保存・読込処理は変更しない。
+- 認証ユーザー情報をAppDataへ保存しない。
+- Firestoreの初期化、保存、読込、同期は実装しない。
+- ログインの有無にかかわらず、家計簿データは引き続き端末内のLocalStorageだけに保存する。
+
+Firebase Console側ではWebアプリの登録、AuthenticationのGoogleプロバイダ有効化、利用する公開先の承認済みドメイン登録を行う。これらの設定値が未確定の開発環境では「未設定」と表示し、ログイン操作を無効化する。
+
+### 8.1 v0.2 Step2：Firestoreクラウド同期の土台
+
+Googleログイン済みユーザーが、明示的な手動操作で現在のAppDataをFirestoreへ保存・取得できるようにする。
+
+- 保存パスは `users/{uid}/apps/kakeibo` とする。
+- AppData全体を1ドキュメントへ保存する。
+- ドキュメント外側に `appData`、`cloudRevision`、`cloudUpdatedAt`、`ownerUid`、`schemaVersion` を持つ。
+- `cloudUpdatedAt`にはFirestoreのサーバータイムスタンプを使用する。
+- `cloudRevision`には保存対象AppDataの `appMetadata.revision` を使用する。
+- Firestore専用情報、Firebaseユーザー情報、認証トークンはAppDataおよびJSONバックアップへ追加しない。
+- Googleログイン後にクラウドドキュメントの有無と概要を取得するが、初回アップロードは自動実行しない。
+- 端末からクラウドへの保存、クラウド状態更新、クラウドから端末への読込はすべて手動操作とする。
+- LocalStorage保存後の自動アップロード、起動時の自動読込、リアルタイムリスナー、自動マージは行わない。
+- Webの永続オフラインキャッシュは有効化しない。通信失敗時もLocalStorage機能は継続する。
+- schemaVersionは1のままとする。
+
+クラウドから端末へ読み込む前に、現在データを `kakeibo-app-data-restore-safety` へ退避し、JSONダウンロードを開始する。クラウドデータは既存AppData検証とFirestore互換値検証を通過した場合だけLocalStorageへ全置換する。
+
+既存クラウドを上書きする場合は端末・クラウド双方の概要を表示する。`appMetadata.updatedAt`を優先し、同時刻ならrevisionで新旧を案内する。クラウド側が新しい可能性がある場合は、通常確認に加えて `OVERWRITE` の完全一致入力を要求する。これは手動操作であるため、追加確認後はrevision不一致でも上書きを許可する。
+
+Firestore Security Rulesはリポジトリの `firestore.rules` を正本とし、Firebase Consoleへ手動で反映する。ルールは次のとおり。
+
+```text
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/apps/{appId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      allow read: if isOwner();
+      allow create, update: if isOwner()
+                            && request.resource.data.ownerUid == userId
+                            && request.resource.data.schemaVersion == 1;
+      allow delete: if isOwner();
+    }
+  }
+}
+```
+
+未ログインユーザーおよびパスの `{userId}` と認証UIDが一致しないユーザーは読み書きできない。アプリUIでは特定メールアドレスに限定せず、各GoogleアカウントのデータをUID単位で分離する。
+
+## 9. 実装時に提案・相談する事項
 
 v0.1の基本仕様は確定済みとする。次の事項は仕様を勝手に変更せず、必要になった時点で改善案としてユーザーへ相談する。
 
 1. 追加直後のカテゴリ・支払い方法の誤入力を訂正する手段を設けるか。
 2. 復元直前バックアップの保存確認を二段階操作にするか。
 
-## 9. 完了条件
+## 10. 完了条件
 
 v0.1は、スマートフォンおよびPCで主要操作を完了でき、サブスクリプションを二重計上せず、JSONバックアップから安全に復元できることをもって完成とする。

@@ -125,6 +125,28 @@ export function saveRestoreSafetySnapshot(data) {
   return safetySnapshot.savedAt;
 }
 
+export function replaceAppData(data) {
+  const nextData = cloneData(data);
+  const validation = validateAppData(nextData);
+  if (!validation.valid) {
+    throw new DataFormatError("不正なデータでは現在データを置き換えられません。", validation.errors);
+  }
+
+  let serialized;
+  try {
+    serialized = JSON.stringify(nextData);
+  } catch (error) {
+    throw new StorageError("置換データを変換できませんでした。", error);
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, serialized);
+  } catch (error) {
+    throw new StorageError("クラウドデータを端末へ保存できませんでした。現在データは変更していません。", error);
+  }
+  return nextData;
+}
+
 export function resetAllAppData() {
   let previousMainData;
   let previousSafetyData;

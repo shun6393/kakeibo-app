@@ -8,6 +8,7 @@ import {
   DataFormatError,
   StorageError,
   loadAppData,
+  replaceAppData,
   resetAllAppData,
   saveAppData,
   saveRestoreSafetySnapshot,
@@ -49,6 +50,12 @@ import {
 } from "./charts.js";
 import { ValidationError, isValidDateString } from "./validation.js";
 import { createCategory, createPaymentMethod, createSubcategory } from "./classifications.js";
+import {
+  compareLocalAndCloud,
+  createAppDataSummary,
+  fetchCloudAppData,
+  saveAppDataToCloud,
+} from "./cloud-sync.js";
 
 const mainViews = new Set(["home", "history", "entry", "stats", "more"]);
 const views = [...document.querySelectorAll("[data-view]")];
@@ -154,6 +161,36 @@ const paymentMethodAddForm = document.querySelector("#payment-method-add-form");
 const paymentMethodAddError = document.querySelector("#payment-method-add-error");
 const paymentMethodCount = document.querySelector("#payment-method-count");
 
+const firebaseConnectionStatus = document.querySelector("#firebase-connection-status");
+const firebaseUserName = document.querySelector("#firebase-user-name");
+const firebaseUserEmail = document.querySelector("#firebase-user-email");
+const firebaseAuthDescription = document.querySelector("#firebase-auth-description");
+const firebaseLoginButton = document.querySelector("#firebase-login-button");
+const firebaseLogoutButton = document.querySelector("#firebase-logout-button");
+const firebaseAuthError = document.querySelector("#firebase-auth-error");
+const cloudPanel = document.querySelector("#cloud-panel");
+const cloudConnectionStatus = document.querySelector("#cloud-connection-status");
+const cloudFetchedAt = document.querySelector("#cloud-fetched-at");
+const cloudUpdatedAt = document.querySelector("#cloud-updated-at");
+const cloudRevision = document.querySelector("#cloud-revision");
+const cloudRecordCounts = document.querySelector("#cloud-record-counts");
+const cloudBaselineStatus = document.querySelector("#cloud-baseline-status");
+const cloudRefreshButton = document.querySelector("#cloud-refresh-button");
+const cloudUploadButton = document.querySelector("#cloud-upload-button");
+const cloudDownloadButton = document.querySelector("#cloud-download-button");
+const cloudUploadDialog = document.querySelector("#cloud-upload-dialog");
+const cloudUploadDescription = document.querySelector("#cloud-upload-description");
+const cloudUploadComparison = document.querySelector("#cloud-upload-comparison");
+const cloudUploadWarning = document.querySelector("#cloud-upload-warning");
+const cloudOverwriteConfirmation = document.querySelector("#cloud-overwrite-confirmation");
+const cloudUploadError = document.querySelector("#cloud-upload-error");
+const cloudUploadBackupButton = document.querySelector("#cloud-upload-backup-button");
+const cloudUploadConfirmButton = document.querySelector("#cloud-upload-confirm-button");
+const cloudDownloadDialog = document.querySelector("#cloud-download-dialog");
+const cloudDownloadComparison = document.querySelector("#cloud-download-comparison");
+const cloudDownloadError = document.querySelector("#cloud-download-error");
+const cloudDownloadConfirmButton = document.querySelector("#cloud-download-confirm-button");
+
 const deleteDialog = document.querySelector("#delete-dialog");
 const deleteTransactionSummary = document.querySelector("#delete-transaction-summary");
 const deleteConfirmButton = document.querySelector("#delete-confirm-button");
@@ -194,6 +231,13 @@ let selectedStatPeriod = STAT_PERIODS.CURRENT_MONTH;
 let selectedStatAxis = STAT_AXES.CATEGORY;
 let historyYear = today.getFullYear();
 let historyMonthIndex = today.getMonth();
+let firebaseAuthModule = null;
+let currentFirebaseUser = null;
+let currentCloudState = null;
+let pendingCloudUpload = null;
+let pendingCloudDownload = null;
+let cloudUploadRequiresOverwrite = false;
+let cloudOperationInProgress = false;
 let toastTimer;
 
 function showView(viewName) {
@@ -257,6 +301,235 @@ function clearFormError(element, form = null) {
   element.hidden = true;
   element.textContent = "";
   form?.querySelectorAll('[aria-invalid="true"]').forEach((control) => control.removeAttribute("aria-invalid"));
+}
+
+function renderFirebaseAuthState(state, user = null) {
+  currentFirebaseUser = user;
+  firebaseConnectionStatus.dataset.state = state;
+  firebaseLoginButton.hidden = state === "signed-in";
+  firebaseLogoutButton.hidden = state !== "signed-in";
+  firebaseLoginButton.disabled = state !== "signed-out";
+  firebaseLogoutButton.disabled = false;
+  firebaseUserEmail.hidden = true;
+  firebaseUserEmail.textContent = "";
+  cloudPanel.hidden = state !== "signed-in";
+
+  if (state !== "signed-in") resetCloudStateDisplay();
+
+  if (state === "loading") {
+    firebaseConnectionStatus.textContent = "接続確認中";
+    firebaseUserName.textContent = "ログイン状態を確認しています";
+    firebaseAuthDescription.textContent = "家計簿データの保存先は引き続きこの端末のLocalStorageです。";
+    return;
+  }
+  if (state === "unconfigured") {
+    firebaseConnectionStatus.textContent = "未設定";
+    firebaseUserName.textContent = "Firebaseの設定が必要です";
+    firebaseAuthDescription.textContent = "js/firebase.js にFirebase ConsoleのWebアプリ設定を入力するとログインを利用できます。";
+    return;
+  }
+  if (state === "error") {
+    firebaseConnectionStatus.textContent = "接続エラー";
+    firebaseUserName.textContent = "Firebaseへ接続できません";
+    firebaseAuthDescription.textContent = "設定または通信状態を確認してください。家計簿の既存機能はそのまま利用できます。";
+    return;
+  }
+  if (state === "signed-in") {
+    firebaseConnectionStatus.textContent = "ログイン中";
+    firebaseUserName.textContent = user.displayName || user.email || "Googleユーザー";
+    firebaseUserEmail.textContent = user.email || "メールアドレス情報なし";
+    firebaseUserEmail.hidden = false;
+    firebaseAuthDescription.textContent = "クラウド操作は手動です。通常の保存先は引き続きこの端末です。";
+    return;
+  }
+
+  firebaseConnectionStatus.textContent = "接続済み";
+  firebaseUserName.textContent = "Googleアカウントにログインしていません";
+  firebaseAuthDescription.textContent = "ログイン状態はFirebase Authが保持します。家計簿データはまだ同期されません。";
+}
+
+function resetCloudStateDisplay() {
+  currentCloudState = null;
+  pendingCloudUpload = null;
+  pendingCloudDownload = null;
+  cloudUploadRequiresOverwrite = false;
+  cloudConnectionStatus.dataset.state = "loading";
+  cloudConnectionStatus.textContent = "確認待ち";
+  cloudFetchedAt.textContent = "未実施";
+  cloudUpdatedAt.textContent = "—";
+  cloudRevision.textContent = "—";
+  cloudRecordCounts.textContent = "—";
+  cloudBaselineStatus.textContent = "—";
+  cloudRefreshButton.disabled = true;
+  cloudUploadButton.disabled = true;
+  cloudDownloadButton.disabled = true;
+}
+
+function setCloudOperationState(inProgress, label = "クラウド確認中") {
+  cloudOperationInProgress = inProgress;
+  cloudRefreshButton.disabled = inProgress || !currentFirebaseUser;
+  cloudUploadButton.disabled = inProgress || !currentFirebaseUser;
+  cloudDownloadButton.disabled = inProgress || !currentFirebaseUser || !currentCloudState?.exists;
+  if (inProgress) {
+    cloudConnectionStatus.dataset.state = "loading";
+    cloudConnectionStatus.textContent = label;
+  }
+}
+
+function renderCloudState(state) {
+  currentCloudState = state;
+  cloudFetchedAt.textContent = formatDateTime(state.fetchedAt);
+  cloudConnectionStatus.dataset.state = state.exists ? "signed-in" : "empty";
+  cloudConnectionStatus.textContent = state.exists ? "データあり" : "データなし";
+  if (state.exists) {
+    cloudUpdatedAt.textContent = formatDateTime(state.cloudUpdatedAt);
+    cloudRevision.textContent = String(state.cloudRevision);
+    cloudRecordCounts.textContent = `${state.summary.transactionCount}件 / ${state.summary.subscriptionCount}件`;
+    cloudBaselineStatus.textContent = state.summary.hasBalanceBaseline ? "設定あり" : "未設定";
+  } else {
+    cloudUpdatedAt.textContent = "クラウドデータはまだありません";
+    cloudRevision.textContent = "—";
+    cloudRecordCounts.textContent = "—";
+    cloudBaselineStatus.textContent = "—";
+  }
+  setCloudOperationState(false);
+}
+
+function showCloudError(error, target = firebaseAuthError) {
+  console.error("クラウド操作に失敗しました。", error);
+  cloudConnectionStatus.dataset.state = "error";
+  cloudConnectionStatus.textContent = "通信エラー";
+  target.textContent = error.message || "クラウド操作に失敗しました。通信状態を確認してください。";
+  target.hidden = false;
+  setCloudOperationState(false);
+}
+
+async function refreshCloudState({ showSuccess = false } = {}) {
+  if (!currentFirebaseUser || cloudOperationInProgress) return null;
+  const requestedUid = currentFirebaseUser.uid;
+  firebaseAuthError.hidden = true;
+  setCloudOperationState(true, "クラウド確認中");
+  try {
+    const state = await fetchCloudAppData();
+    if (currentFirebaseUser?.uid !== requestedUid) return null;
+    renderCloudState(state);
+    if (showSuccess) showToast("クラウド状態を更新しました");
+    return state;
+  } catch (error) {
+    if (currentFirebaseUser?.uid === requestedUid) showCloudError(error);
+    return null;
+  }
+}
+
+function appendSummaryCard(container, title, summary, updatedAtLabel = "更新日時") {
+  const card = document.createElement("section");
+  card.className = "cloud-comparison-card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("dl");
+  const rows = [
+    ["revision", String(summary.revision)],
+    [updatedAtLabel, formatDateTime(summary.updatedAt)],
+    ["取引", `${summary.transactionCount}件`],
+    ["サブスク", `${summary.subscriptionCount}件`],
+    ["初期残高", summary.hasBalanceBaseline ? "設定あり" : "未設定"],
+  ];
+  rows.forEach(([label, value]) => {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    list.append(term, description);
+  });
+  card.append(heading, list);
+  container.append(card);
+}
+
+function renderCloudComparison(container, localData, cloudState) {
+  container.replaceChildren();
+  appendSummaryCard(container, "この端末", createAppDataSummary(localData));
+  if (cloudState.exists) {
+    appendSummaryCard(container, "クラウド", {
+      ...cloudState.summary,
+      revision: cloudState.cloudRevision,
+      updatedAt: cloudState.cloudUpdatedAt,
+    }, "クラウド更新");
+  } else {
+    const emptyCard = document.createElement("section");
+    emptyCard.className = "cloud-comparison-card";
+    emptyCard.innerHTML = "<h3>クラウド</h3><p>クラウドデータはまだありません</p>";
+    container.append(emptyCard);
+  }
+
+  const comparison = compareLocalAndCloud(localData, cloudState);
+  const messages = {
+    "cloud-missing": "初回クラウド保存です。端末データを新しく保存します。",
+    "local-newer": "端末側のデータの方が新しい可能性があります。",
+    "cloud-newer": "クラウド側のデータの方が新しい可能性があります。",
+    same: "端末側とクラウド側は同じ更新状態です。",
+  };
+  const freshness = document.createElement("p");
+  freshness.className = `cloud-freshness${comparison === "cloud-newer" ? " is-warning" : ""}`;
+  freshness.textContent = messages[comparison];
+  container.append(freshness);
+  return comparison;
+}
+
+async function openCloudUploadDialog() {
+  const state = await refreshCloudState();
+  if (!state) return;
+  try {
+    pendingCloudUpload = cloneData(loadAppData().data);
+    const comparison = renderCloudComparison(cloudUploadComparison, pendingCloudUpload, state);
+    cloudUploadDescription.textContent = state.exists
+      ? "クラウドデータを端末データで上書きします。先にJSONバックアップを取得することをおすすめします。"
+      : "現在の端末データを初めてクラウドへ保存します。先にJSONバックアップを取得することをおすすめします。";
+    cloudUploadRequiresOverwrite = comparison === "cloud-newer";
+    cloudUploadWarning.hidden = !cloudUploadRequiresOverwrite;
+    cloudOverwriteConfirmation.value = "";
+    cloudUploadConfirmButton.disabled = cloudUploadRequiresOverwrite;
+    clearFormError(cloudUploadError);
+    cloudUploadDialog.showModal();
+  } catch (error) {
+    showCloudError(error);
+  }
+}
+
+async function openCloudDownloadDialog() {
+  const state = await refreshCloudState();
+  if (!state?.exists) return;
+  pendingCloudDownload = cloneData(state.appData);
+  renderCloudComparison(cloudDownloadComparison, appData, state);
+  clearFormError(cloudDownloadError);
+  cloudDownloadDialog.showModal();
+}
+
+function showFirebaseAuthError(error) {
+  console.error("Firebase認証処理に失敗しました。", error);
+  firebaseAuthError.textContent = error.message || "Firebase認証でエラーが発生しました。";
+  firebaseAuthError.hidden = false;
+}
+
+async function initializeFirebaseConnection() {
+  renderFirebaseAuthState("loading");
+  try {
+    firebaseAuthModule = await import("./firebase.js");
+    const result = await firebaseAuthModule.initializeFirebaseAuth((user, error) => {
+      if (error) {
+        renderFirebaseAuthState("error");
+        showFirebaseAuthError(error);
+        return;
+      }
+      firebaseAuthError.hidden = true;
+      firebaseAuthError.textContent = "";
+      renderFirebaseAuthState(user ? "signed-in" : "signed-out", user);
+      if (user) void refreshCloudState();
+    });
+    if (result.status === "unconfigured") renderFirebaseAuthState("unconfigured");
+  } catch (error) {
+    renderFirebaseAuthState("error");
+    showFirebaseAuthError(error);
+  }
 }
 
 function populatePaymentMethods() {
@@ -1600,6 +1873,107 @@ deleteAllConfirmButton.addEventListener("click", () => {
   }
 });
 
+firebaseLoginButton.addEventListener("click", async () => {
+  if (!firebaseAuthModule) return;
+  firebaseAuthError.hidden = true;
+  firebaseLoginButton.disabled = true;
+  firebaseConnectionStatus.textContent = "ログイン処理中";
+  try {
+    await firebaseAuthModule.signInWithGoogle();
+    showToast("Googleアカウントでログインしました");
+  } catch (error) {
+    showFirebaseAuthError(error);
+    renderFirebaseAuthState(currentFirebaseUser ? "signed-in" : "signed-out", currentFirebaseUser);
+  }
+});
+
+firebaseLogoutButton.addEventListener("click", async () => {
+  if (!firebaseAuthModule) return;
+  firebaseAuthError.hidden = true;
+  firebaseLogoutButton.disabled = true;
+  firebaseConnectionStatus.textContent = "ログアウト処理中";
+  try {
+    await firebaseAuthModule.signOutFromFirebase();
+    showToast("ログアウトしました");
+  } catch (error) {
+    showFirebaseAuthError(error);
+    renderFirebaseAuthState(currentFirebaseUser ? "signed-in" : "signed-out", currentFirebaseUser);
+  }
+});
+
+cloudRefreshButton.addEventListener("click", () => {
+  void refreshCloudState({ showSuccess: true });
+});
+
+cloudUploadButton.addEventListener("click", () => {
+  void openCloudUploadDialog();
+});
+
+cloudDownloadButton.addEventListener("click", () => {
+  void openCloudDownloadDialog();
+});
+
+cloudOverwriteConfirmation.addEventListener("input", () => {
+  cloudUploadConfirmButton.disabled = cloudUploadRequiresOverwrite && cloudOverwriteConfirmation.value !== "OVERWRITE";
+  clearFormError(cloudUploadError);
+});
+
+cloudUploadBackupButton.addEventListener("click", () => {
+  try {
+    startJsonBackup("kakeibo-before-cloud-save");
+    pendingCloudUpload = cloneData(loadAppData().data);
+    const comparison = renderCloudComparison(cloudUploadComparison, pendingCloudUpload, currentCloudState);
+    cloudUploadRequiresOverwrite = cloudUploadRequiresOverwrite || comparison === "cloud-newer";
+    cloudUploadWarning.hidden = !cloudUploadRequiresOverwrite;
+    cloudOverwriteConfirmation.value = "";
+    cloudUploadConfirmButton.disabled = cloudUploadRequiresOverwrite;
+  } catch (error) {
+    showDataOperationError(error, cloudUploadError);
+  }
+});
+
+cloudUploadConfirmButton.addEventListener("click", async () => {
+  if (!pendingCloudUpload || cloudOperationInProgress) return;
+  clearFormError(cloudUploadError);
+  cloudUploadConfirmButton.disabled = true;
+  setCloudOperationState(true, "保存中");
+  try {
+    const state = await saveAppDataToCloud(pendingCloudUpload);
+    pendingCloudUpload = null;
+    cloudUploadRequiresOverwrite = false;
+    currentCloudState = state;
+    cloudUploadDialog.close();
+    renderCloudState(state);
+    showToast("クラウドへ保存しました");
+  } catch (error) {
+    showCloudError(error, cloudUploadError);
+    cloudUploadConfirmButton.disabled = false;
+  }
+});
+
+cloudDownloadConfirmButton.addEventListener("click", () => {
+  if (!pendingCloudDownload) return;
+  clearFormError(cloudDownloadError);
+  cloudDownloadConfirmButton.disabled = true;
+  setCloudOperationState(true, "読込中");
+  try {
+    saveRestoreSafetySnapshot(appData);
+    downloadJsonBackup(appData, "kakeibo-before-cloud-load");
+    appData = replaceAppData(pendingCloudDownload);
+    pendingCloudDownload = null;
+    cloudDownloadDialog.close();
+    resetUiAfterDataReplacement();
+    showView("home");
+    showToast("クラウドデータをこの端末へ読み込みました");
+    if (appData.balanceBaseline === null) window.setTimeout(openBalanceDialog, 0);
+  } catch (error) {
+    showDataOperationError(error, cloudDownloadError);
+  } finally {
+    cloudDownloadConfirmButton.disabled = false;
+    setCloudOperationState(false);
+  }
+});
+
 window.addEventListener("storage", (event) => {
   if (event.key === STORAGE_KEY) showToast("別のタブでデータが更新されました。再読み込みしてください");
 });
@@ -1668,3 +2042,4 @@ if (chartLibraryScript && typeof globalThis.Chart !== "function") {
 }
 
 initializeApp();
+void initializeFirebaseConnection();
