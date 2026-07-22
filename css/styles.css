@@ -52,8 +52,15 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 button,
@@ -69,7 +76,8 @@ select:disabled {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid rgba(47, 150, 99, 0.28);
   outline-offset: 2px;
 }
@@ -676,7 +684,8 @@ h3 {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   min-height: 48px;
   padding: 0 13px;
