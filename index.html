@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#176b45">
+    <meta name="description" content="収入、支出、ゲーム支出、サブスクリプションを管理する自分専用の家計簿">
+    <title>わたしの家計簿</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" data-chart-library></script>
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">MY MONEY</p>
+          <h1 class="app-title">わたしの家計簿</h1>
+        </div>
+        <button class="icon-button" type="button" data-view-target="settings" aria-label="設定を開く">
+          <span aria-hidden="true">•••</span>
+        </button>
+      </header>
+
+      <main class="main-content" id="main-content">
+        <div class="error-banner" id="storage-error" role="alert" hidden>
+          <strong>データを利用できません</strong>
+          <p id="storage-error-message"></p>
+        </div>
+        <section class="view is-active" id="view-home" data-view="home" aria-labelledby="home-title">
+          <div class="section-heading home-heading">
+            <div>
+              <p class="date-label">今月</p>
+              <h2 id="home-title">ホーム</h2>
+            </div>
+            <button class="button button-primary button-compact" type="button" data-view-target="entry">
+              <span aria-hidden="true">＋</span> 収支を登録
+            </button>
+          </div>
+
+          <section class="balance-card" aria-labelledby="balance-title">
+            <div class="balance-card-topline">
+              <p id="balance-title">現在の残高</p>
+              <span class="status-pill" id="balance-status">未設定</span>
+            </div>
+            <p class="balance-value" id="balance-value">— 円</p>
+            <p class="balance-note" id="balance-note">基準日終了時点の残高から計算します</p>
+            <button class="text-button text-button-on-dark" id="balance-setup-button" type="button" data-dialog-open="balance-dialog">
+              初期残高を設定する <span aria-hidden="true">›</span>
+            </button>
+          </section>
+
+          <section aria-labelledby="monthly-summary-title">
+            <div class="subsection-heading">
+              <h3 id="monthly-summary-title">今月のまとめ</h3>
+            </div>
+            <div class="summary-grid">
+              <article class="summary-card summary-income">
+                <p>収入</p>
+                <strong id="home-income">0円</strong>
+              </article>
+              <article class="summary-card summary-expense">
+                <p>支出</p>
+                <strong id="home-expense">0円</strong>
+              </article>
+              <article class="summary-card summary-net">
+                <p>収支</p>
+                <strong id="home-net">0円</strong>
+              </article>
+              <article class="summary-card summary-game">
+                <p>ゲーム支出</p>
+                <strong id="home-game-expense">0円</strong>
+              </article>
+              <article class="summary-card summary-subscription">
+                <p>サブスク支出</p>
+                <strong id="home-subscription-expense">0円</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel home-breakdown-panel" aria-labelledby="home-breakdown-title">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">THIS MONTH</p>
+                <h3 id="home-breakdown-title">今月の支出内訳</h3>
+              </div>
+              <button class="text-button" type="button" data-view-target="stats">詳しく見る</button>
+            </div>
+            <div class="home-chart-container" id="home-chart-container" hidden>
+              <canvas id="home-expense-chart" aria-label="今月の大カテゴリ別支出ドーナツグラフ" role="img"></canvas>
+            </div>
+            <div class="home-chart-message" id="home-chart-message" aria-live="polite">
+              <p>今月の支出はありません</p>
+            </div>
+            <div class="breakdown-list home-breakdown-list" id="home-breakdown-list" hidden></div>
+          </section>
+
+          <section class="panel next-renewal" aria-labelledby="renewal-title">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">SUBSCRIPTION</p>
+                <h3 id="renewal-title">次回更新予定</h3>
+              </div>
+              <button class="text-button" type="button" data-view-target="subscriptions">すべて見る</button>
+            </div>
+            <div class="renewal-list" id="next-renewal-list" role="list" hidden></div>
+            <div class="empty-state compact-empty" id="next-renewal-empty">
+              <span class="empty-icon" aria-hidden="true">○</span>
+              <p id="next-renewal-message">サブスク未登録</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-history" data-view="history" aria-labelledby="history-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="date-label">取引を振り返る</p>
+              <h2 id="history-title">履歴</h2>
+            </div>
+          </div>
+
+          <div class="period-switcher" aria-label="表示期間">
+            <button type="button" id="history-previous-month" aria-label="前月">‹</button>
+            <strong id="history-month-label">今月</strong>
+            <button type="button" id="history-next-month" aria-label="翌月">›</button>
+          </div>
+
+          <button class="text-button history-today-button" id="history-current-month" type="button" hidden>今月へ戻る</button>
+
+          <div class="filter-row">
+            <label class="field compact-field">
+              <span>種別</span>
+              <select id="history-type-filter">
+                <option value="all">すべて</option>
+                <option value="income">収入</option>
+                <option value="expense">支出</option>
+              </select>
+            </label>
+            <label class="field compact-field">
+              <span>大カテゴリ</span>
+              <select id="history-category-filter"></select>
+            </label>
+          </div>
+
+          <div class="transaction-list" id="transaction-list" hidden></div>
+
+          <div class="empty-state panel large-empty" id="history-empty-state">
+            <span class="empty-icon" aria-hidden="true">≡</span>
+            <h3>まだ履歴がありません</h3>
+            <p>収入や支出を登録すると、月ごとの履歴を確認できます。</p>
+            <button class="button button-primary" type="button" data-view-target="entry">最初の収支を登録</button>
+          </div>
+        </section>
+
+        <section class="view" id="view-entry" data-view="entry" aria-labelledby="entry-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="date-label" id="entry-kicker">新しい記録</p>
+              <h2 id="entry-title">収支登録</h2>
+            </div>
+          </div>
+
+          <form class="panel form-panel" id="transaction-form" novalidate>
+            <fieldset class="segmented-fieldset">
+              <legend>種別</legend>
+              <div class="segmented-control">
+                <label>
+                  <input type="radio" name="transaction-type" value="expense" checked>
+                  <span>支出</span>
+                </label>
+                <label>
+                  <input type="radio" name="transaction-type" value="income">
+                  <span>収入</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="form-grid">
+              <label class="field">
+                <span>日付</span>
+                <input type="date" name="date" required>
+              </label>
+              <label class="field amount-field">
+                <span>金額</span>
+                <span class="input-with-suffix">
+                  <input type="number" name="amount" min="1" step="1" inputmode="numeric" placeholder="0" required>
+                  <span>円</span>
+                </span>
+              </label>
+              <label class="field full-width">
+                <span>内容</span>
+                <input type="text" name="title" maxlength="80" placeholder="例：スーパー、原神、Amazon">
+              </label>
+              <label class="field">
+                <span id="category-label">大カテゴリ</span>
+                <select name="category" id="category-select" required></select>
+              </label>
+              <label class="field" id="subcategory-field">
+                <span>小カテゴリ</span>
+                <select name="subcategory" id="subcategory-select">
+                  <option value="">大カテゴリを先に選択</option>
+                </select>
+                <small id="subcategory-help">大カテゴリに合わせて選択肢が変わります</small>
+              </label>
+              <label class="field full-width">
+                <span id="payment-label">支払い方法</span>
+                <select name="payment-method" id="payment-method-select" required></select>
+              </label>
+            </div>
+
+            <p class="form-error" id="transaction-form-error" role="alert" hidden></p>
+            <div class="form-actions">
+              <button class="button button-secondary" id="transaction-edit-cancel" type="button" hidden>編集をやめる</button>
+              <button class="button button-primary" id="transaction-submit" type="submit">この内容で登録</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="view" id="view-stats" data-view="stats" aria-labelledby="stats-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="date-label">支出を見える化</p>
+              <h2 id="stats-title">集計</h2>
+            </div>
+          </div>
+
+          <div class="chip-group" aria-label="集計期間">
+            <button class="chip is-selected" type="button" data-stat-period="current-month">今月</button>
+            <button class="chip" type="button" data-stat-period="previous-month">先月</button>
+            <button class="chip" type="button" data-stat-period="current-year">今年</button>
+            <button class="chip" type="button" data-stat-period="all">全期間</button>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="集計方法">
+            <button class="is-active" type="button" role="tab" aria-selected="true" data-stat-axis="category">大カテゴリ別</button>
+            <button type="button" role="tab" aria-selected="false" data-stat-axis="game">ゲーム別</button>
+            <button type="button" role="tab" aria-selected="false" data-stat-axis="payment-method">支払い方法別</button>
+          </div>
+
+          <section class="panel chart-panel" aria-labelledby="chart-title">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker" id="stats-period-label">今月</p>
+                <h3 id="chart-title">カテゴリ別支出</h3>
+              </div>
+              <div class="stats-total">
+                <span id="stats-total-label">支出合計</span>
+                <strong id="stats-total">0円</strong>
+              </div>
+            </div>
+            <div class="chart-container" id="stats-chart-container" hidden>
+              <canvas id="stats-chart" aria-label="支出内訳のドーナツグラフ" role="img"></canvas>
+            </div>
+            <div class="chart-placeholder" id="stats-chart-message" aria-live="polite">
+              <div class="chart-ring" aria-hidden="true"></div>
+              <p>この期間の支出はありません</p>
+            </div>
+            <div class="chart-legend" id="stats-chart-legend" aria-label="グラフの凡例" hidden></div>
+          </section>
+
+          <section class="panel" aria-labelledby="breakdown-title">
+            <div class="panel-heading">
+              <h3 id="breakdown-title">内訳</h3>
+            </div>
+            <div class="breakdown-list" id="stats-breakdown-list" hidden></div>
+            <div class="empty-state compact-empty" id="stats-breakdown-empty">
+              <p>表示できるデータがありません</p>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-more" data-view="more" aria-labelledby="more-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="date-label">管理メニュー</p>
+              <h2 id="more-title">その他</h2>
+            </div>
+          </div>
+
+          <div class="menu-list">
+            <button class="menu-item" type="button" data-view-target="subscriptions">
+              <span class="menu-icon" aria-hidden="true">↻</span>
+              <span><strong>サブスク管理</strong><small>更新予定・停止中を確認</small></span>
+              <span aria-hidden="true">›</span>
+            </button>
+            <button class="menu-item" type="button" data-view-target="categories">
+              <span class="menu-icon" aria-hidden="true">＋</span>
+              <span><strong>カテゴリ・支払い方法</strong><small>新しい項目を追加</small></span>
+              <span aria-hidden="true">›</span>
+            </button>
+            <button class="menu-item" type="button" data-view-target="settings">
+              <span class="menu-icon" aria-hidden="true">↓</span>
+              <span><strong>データ管理</strong><small>バックアップ・復元・CSV出力</small></span>
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+
+          <div class="notice-card">
+            <strong>この端末だけに保存されます</strong>
+            <p>PCや別のブラウザとは同期されません。定期的にJSONバックアップを保存してください。</p>
+          </div>
+        </section>
+
+        <section class="view" id="view-subscriptions" data-view="subscriptions" aria-labelledby="subscriptions-title" hidden>
+          <div class="section-heading">
+            <button class="back-button" type="button" data-view-target="more" aria-label="その他へ戻る">‹</button>
+            <div class="heading-grow">
+              <p class="date-label">定期的な支出</p>
+              <h2 id="subscriptions-title">サブスク管理</h2>
+            </div>
+            <button class="button button-primary button-compact" id="subscription-add-button" type="button">＋ 追加</button>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="サブスクの状態">
+            <button class="is-active" id="subscription-active-tab" type="button" role="tab" aria-selected="true">利用中</button>
+            <button id="subscription-stopped-tab" type="button" role="tab" aria-selected="false">停止中</button>
+          </div>
+          <div class="subscription-list" id="subscription-list" hidden></div>
+          <div class="empty-state panel large-empty" id="subscription-empty-state">
+            <span class="empty-icon" aria-hidden="true">↻</span>
+            <h3>サブスクはまだありません</h3>
+            <p>毎月・毎年の支払いを登録すると、更新日に自動計上します。</p>
+          </div>
+        </section>
+
+        <section class="view" id="view-categories" data-view="categories" aria-labelledby="categories-title" hidden>
+          <div class="section-heading">
+            <button class="back-button" type="button" data-view-target="more" aria-label="その他へ戻る">‹</button>
+            <div class="heading-grow">
+              <p class="date-label">選択肢を追加</p>
+              <h2 id="categories-title">カテゴリ・支払い方法</h2>
+            </div>
+          </div>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel-heading"><h3>大カテゴリ</h3><span class="item-count" id="category-count"></span></div>
+              <p class="panel-description">支出をまとめる大きな分類です。編集・削除・並び替えはv0.2で対応します。</p>
+              <form class="classification-form" id="category-add-form" novalidate>
+                <label class="field full-width">
+                  <span>カテゴリ名</span>
+                  <input type="text" name="category-name" maxlength="49" autocomplete="off" required>
+                </label>
+                <fieldset class="segmented-fieldset full-width">
+                  <legend>用途</legend>
+                  <div class="segmented-control">
+                    <label><input type="radio" name="category-type" value="expense" checked><span>支出用</span></label>
+                    <label><input type="radio" name="category-type" value="income"><span>収入用</span></label>
+                  </div>
+                </fieldset>
+                <p class="form-error full-width" id="category-add-error" role="alert" hidden></p>
+                <button class="button button-primary button-full full-width" type="submit">大カテゴリを追加</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-heading"><h3>小カテゴリ</h3><span class="item-count" id="subcategory-count"></span></div>
+              <p class="panel-description">ゲーム名など、より詳しい分類を追加できます。</p>
+              <form class="classification-form" id="subcategory-add-form" novalidate>
+                <label class="field full-width">
+                  <span>親カテゴリ</span>
+                  <select name="parent-category" id="subcategory-parent-select" required></select>
+                </label>
+                <label class="field full-width">
+                  <span>小カテゴリ名</span>
+                  <input type="text" name="subcategory-name" maxlength="49" autocomplete="off" required>
+                </label>
+                <p class="form-error full-width" id="subcategory-add-error" role="alert" hidden></p>
+                <button class="button button-primary button-full full-width" type="submit">小カテゴリを追加</button>
+              </form>
+            </section>
+            <section class="panel">
+              <div class="panel-heading"><h3>支払い・受取方法</h3><span class="item-count" id="payment-method-count"></span></div>
+              <p class="panel-description">収入と支出で共通の選択肢を使用します。</p>
+              <form class="classification-form" id="payment-method-add-form" novalidate>
+                <label class="field full-width">
+                  <span>名称</span>
+                  <input type="text" name="payment-method-name" maxlength="49" autocomplete="off" required>
+                </label>
+                <p class="form-error full-width" id="payment-method-add-error" role="alert" hidden></p>
+                <button class="button button-primary button-full full-width" type="submit">支払い・受取方法を追加</button>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings" data-view="settings" aria-labelledby="settings-title" hidden>
+          <div class="section-heading">
+            <button class="back-button" type="button" data-view-target="more" aria-label="その他へ戻る">‹</button>
+            <div class="heading-grow">
+              <p class="date-label">大切な記録を守る</p>
+              <h2 id="settings-title">データ管理</h2>
+            </div>
+          </div>
+
+          <div class="stack">
+            <section class="panel data-card">
+              <span class="data-card-icon" aria-hidden="true">¥</span>
+              <div><h3>初期残高・基準日</h3><p id="settings-baseline-summary">未設定です。</p></div>
+              <button class="button button-secondary" id="baseline-edit-button" type="button" data-dialog-open="balance-dialog">訂正</button>
+            </section>
+            <section class="panel data-card">
+              <span class="data-card-icon" aria-hidden="true">↓</span>
+              <div><h3>JSONバックアップ</h3><p>すべてのデータを復元用ファイルとして保存します。</p></div>
+              <button class="button button-secondary" id="json-backup-button" type="button">保存</button>
+            </section>
+            <section class="panel data-card">
+              <span class="data-card-icon" aria-hidden="true">↑</span>
+              <div><h3>JSONから復元</h3><p>現在のデータをバックアップしてから全置換します。</p></div>
+              <input id="json-restore-input" type="file" accept="application/json,.json" hidden>
+              <button class="button button-secondary" id="json-restore-button" type="button">ファイルを選択</button>
+            </section>
+            <section class="panel data-card">
+              <span class="data-card-icon" aria-hidden="true">≡</span>
+              <div><h3>CSV出力</h3><p>収入と支出の履歴を表計算用に出力します。</p></div>
+              <button class="button button-secondary" id="csv-export-button" type="button">出力</button>
+            </section>
+          </div>
+          <p class="form-error data-operation-error" id="data-operation-error" role="alert" hidden></p>
+          <p class="backup-status" id="last-backup-status">最終JSONバックアップ：未実施</p>
+
+          <section class="danger-zone" aria-labelledby="danger-zone-title">
+            <div>
+              <p class="panel-kicker">DANGER ZONE</p>
+              <h3 id="danger-zone-title">全データ削除</h3>
+              <p>初期残高、取引、サブスク、分類、設定をすべて初期化します。</p>
+            </div>
+            <button class="button button-danger" id="delete-all-open-button" type="button">削除手続きへ</button>
+          </section>
+        </section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="メインナビゲーション">
+        <button class="is-active" type="button" data-view-target="home" aria-current="page"><span aria-hidden="true">⌂</span><small>ホーム</small></button>
+        <button type="button" data-view-target="history"><span aria-hidden="true">≡</span><small>履歴</small></button>
+        <button class="nav-add" type="button" data-view-target="entry"><span aria-hidden="true">＋</span><small>登録</small></button>
+        <button type="button" data-view-target="stats"><span aria-hidden="true">◔</span><small>集計</small></button>
+        <button type="button" data-view-target="more"><span aria-hidden="true">•••</span><small>その他</small></button>
+      </nav>
+    </div>
+
+    <dialog class="dialog" id="balance-dialog" aria-labelledby="balance-dialog-title">
+      <form method="dialog" id="balance-form" novalidate>
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker" id="balance-dialog-kicker">FIRST SETUP</p>
+            <h2 id="balance-dialog-title">初期残高を設定</h2>
+          </div>
+          <button class="icon-button" type="button" data-dialog-close="balance-dialog" aria-label="閉じる">×</button>
+        </div>
+        <p class="dialog-description">基準日の終了時点で持っている合計残高を入力してください。翌日以降の収支から現在残高を計算します。</p>
+        <label class="field">
+          <span>基準日</span>
+          <input type="date" name="baseline-date" required>
+          <small>この日の取引は残高計算に含みません</small>
+        </label>
+        <label class="field">
+          <span>基準日終了時点の残高</span>
+          <span class="input-with-suffix">
+            <input type="number" name="baseline-amount" min="1" step="1" inputmode="numeric" placeholder="0" required>
+            <span>円</span>
+          </span>
+        </label>
+        <p class="form-error" id="balance-form-error" role="alert" hidden></p>
+        <button class="button button-primary button-full" id="balance-submit" value="confirm">設定する</button>
+      </form>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="baseline-confirm-dialog" aria-labelledby="baseline-confirm-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">CONFIRM</p>
+            <h2 id="baseline-confirm-title">残高基準を変更しますか？</h2>
+          </div>
+        </div>
+        <p class="dialog-description">基準日を変更すると、現在残高の計算対象となる取引範囲が変わります。</p>
+        <div class="confirmation-summary" id="baseline-confirm-summary"></div>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="baseline-confirm-dialog">戻る</button>
+          <button class="button button-primary" id="baseline-confirm-button" type="button">変更する</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="delete-dialog" aria-labelledby="delete-dialog-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">DELETE</p>
+            <h2 id="delete-dialog-title">取引を削除しますか？</h2>
+          </div>
+        </div>
+        <p class="dialog-description">削除した取引は元に戻せません。</p>
+        <div class="confirmation-summary" id="delete-transaction-summary"></div>
+        <p class="form-error" id="delete-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="delete-dialog">キャンセル</button>
+          <button class="button button-danger" id="delete-confirm-button" type="button">削除する</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog" id="subscription-dialog" aria-labelledby="subscription-dialog-title">
+      <form method="dialog" id="subscription-form" novalidate>
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker" id="subscription-dialog-kicker">NEW SUBSCRIPTION</p>
+            <h2 id="subscription-dialog-title">サブスクを登録</h2>
+          </div>
+          <button class="icon-button" type="button" data-dialog-close="subscription-dialog" aria-label="閉じる">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="field full-width">
+            <span>名前</span>
+            <input type="text" name="name" maxlength="80" placeholder="例：ChatGPT" required>
+          </label>
+          <label class="field amount-field">
+            <span>金額</span>
+            <span class="input-with-suffix">
+              <input type="number" name="amount" min="1" step="1" inputmode="numeric" required>
+              <span>円</span>
+            </span>
+          </label>
+          <label class="field">
+            <span>大カテゴリ</span>
+            <select name="category" id="subscription-category-select" required></select>
+          </label>
+          <label class="field" id="subscription-subcategory-field">
+            <span>小カテゴリ</span>
+            <select name="subcategory" id="subscription-subcategory-select" required></select>
+          </label>
+          <label class="field">
+            <span>支払い方法</span>
+            <select name="payment-method" id="subscription-payment-method-select" required></select>
+          </label>
+          <div class="form-grid full-width" id="subscription-schedule-fields">
+            <label class="field">
+              <span>更新周期</span>
+              <select name="cycle" required>
+                <option value="monthly">毎月</option>
+                <option value="yearly">毎年</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>次回更新日</span>
+              <input type="date" name="next-billing-date" required>
+            </label>
+          </div>
+        </div>
+        <p class="form-error" id="subscription-form-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="button button-secondary" id="subscription-edit-cancel" type="button" hidden>編集をやめる</button>
+          <button class="button button-primary" id="subscription-submit" type="submit">登録する</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="subscription-stop-dialog" aria-labelledby="subscription-stop-title">
+      <div class="dialog-content">
+        <div class="dialog-heading"><div><p class="panel-kicker">STOP</p><h2 id="subscription-stop-title">サブスクを停止しますか？</h2></div></div>
+        <p class="dialog-description">今後の自動計上を停止します。過去の支出履歴は残り、停止期間中の更新分は再開後も補完されません。</p>
+        <div class="confirmation-summary" id="subscription-stop-summary"></div>
+        <p class="form-error" id="subscription-stop-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="subscription-stop-dialog">キャンセル</button>
+          <button class="button button-danger" id="subscription-stop-confirm" type="button">停止する</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog" id="subscription-resume-dialog" aria-labelledby="subscription-resume-title">
+      <form method="dialog" id="subscription-resume-form" novalidate>
+        <div class="dialog-heading">
+          <div><p class="panel-kicker">RESUME</p><h2 id="subscription-resume-title">サブスクを再開</h2></div>
+          <button class="icon-button" type="button" data-dialog-close="subscription-resume-dialog" aria-label="閉じる">×</button>
+        </div>
+        <p class="dialog-description">新しい次回更新日から自動計上を再開します。停止期間分は補完しません。</p>
+        <div class="confirmation-summary" id="subscription-resume-summary"></div>
+        <label class="field">
+          <span>新しい次回更新日</span>
+          <input type="date" name="resume-date" required>
+          <small>今日以降の日付を指定してください</small>
+        </label>
+        <p class="form-error" id="subscription-resume-error" role="alert" hidden></p>
+        <button class="button button-primary button-full" type="submit">再開する</button>
+      </form>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="restore-preview-dialog" aria-labelledby="restore-preview-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">RESTORE</p>
+            <h2 id="restore-preview-title">復元内容を確認</h2>
+          </div>
+        </div>
+        <p class="dialog-description">現在データを安全退避してから、選択したバックアップで全置換します。</p>
+        <dl class="data-summary" id="restore-summary"></dl>
+        <p class="form-error" id="restore-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="restore-preview-dialog">キャンセル</button>
+          <button class="button button-primary" id="restore-confirm-button" type="button">安全退避して復元</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="delete-all-warning-dialog" aria-labelledby="delete-all-warning-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">DELETE ALL</p>
+            <h2 id="delete-all-warning-title">すべてのデータを削除しますか？</h2>
+          </div>
+        </div>
+        <p class="dialog-description">次のデータがすべて削除され、元に戻せません。先にJSONバックアップを取得することを強くおすすめします。</p>
+        <ul class="impact-list">
+          <li>初期残高と基準日</li>
+          <li>すべての収入・支出</li>
+          <li>サブスクリプション</li>
+          <li>追加カテゴリ・小カテゴリ</li>
+          <li>追加した支払い・受取方法</li>
+          <li>アプリ設定と復元前の一時退避</li>
+        </ul>
+        <div class="dialog-actions delete-warning-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="delete-all-warning-dialog">キャンセル</button>
+          <button class="button button-secondary" id="delete-all-backup-button" type="button">先にバックアップ</button>
+          <button class="button button-danger" id="delete-all-continue-button" type="button">確認入力へ進む</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirmation-dialog" id="delete-all-confirm-dialog" aria-labelledby="delete-all-confirm-title">
+      <div class="dialog-content">
+        <div class="dialog-heading">
+          <div>
+            <p class="panel-kicker">FINAL CONFIRMATION</p>
+            <h2 id="delete-all-confirm-title">最終確認</h2>
+          </div>
+        </div>
+        <p class="dialog-description">削除するには、半角大文字で <strong>DELETE</strong> と入力してください。</p>
+        <label class="field">
+          <span>確認文字列</span>
+          <input id="delete-all-confirmation-input" type="text" autocomplete="off" spellcheck="false" placeholder="DELETE">
+        </label>
+        <p class="form-error" id="delete-all-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="button button-secondary" type="button" data-dialog-close="delete-all-confirm-dialog">キャンセル</button>
+          <button class="button button-danger" id="delete-all-confirm-button" type="button" disabled>完全に削除する</button>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
